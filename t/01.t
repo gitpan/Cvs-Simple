@@ -1,8 +1,7 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
-use Test::More qw(no_plan);
-#use lib '../lib';
+use Test::More tests=>4;
 
 BEGIN {
     use_ok('Cvs::Simple');

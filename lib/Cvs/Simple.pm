@@ -1,111 +1,139 @@
 #!/usr/bin/perl
-package Cvs::Simple;
+package Cvs::Simple::Hook;
 use strict;
 use warnings;
-use Carp;
-use Cvs::Simple::Config;
-use FileHandle;
 
-our $VERSION = 0.02;
-
+{
 my(%PERMITTED) = (
-    'All'  => '',
-    'add'  => '',
-    'checkout'  => '',
-    'commit'  => '',
-    'update'  => '',
-    'diff'  => '',
-    'status' => '',
+    'All'      => '',
+    'add'      => '',
+    'checkout' => '',
+    'commit'   => '',
+    'update'   => '',
+    'diff'     => '',
+    'status'   => '',
 );
 sub PERM_REQ () {
     my($patt) = join '|' => keys %PERMITTED;
     return qr/$patt/;
 }
-my($PERM_REQ) = PERM_REQ;
 
-sub new {
-    my($class) = shift;
-    my($self) = {};
-    bless $self, $class;
-    $self->_init(@_);
-    return $self;
+sub permitted ($) {
+    return exists $PERMITTED{$_[0]} ? 1 : 0;
 }
 
-sub _init {
-    my($self) = shift;
-    my(%args) = @_;
+sub get_hook ($) {
+    my($cmd)      = shift;
 
-    if(exists $args{cvs_bin}) {
-        $self->cvs_bin($args{cvs_bin});
-    }
-    else {
-        $self->cvs_bin(Cvs::Simple::Config::CVS_BIN);
-    }
+    my($PERM_REQ) = PERM_REQ;
 
-    if(exists $args{external}) {
-        $self->external($args{external});
-    }
-    elsif (Cvs::Simple::Config::EXTERNAL) {
-        $self->external(Cvs::Simple::Config::EXTERNAL);
-    }
-
-    if(exists $args{callback}) {
-        $self->callback($args{callback});
-    }
-}
-
-sub callback {
-    my($self) = shift;
-    my($hook) = shift;
-    my($func) = shift;
-
-    # If 'hook' is not supplied, callback is global, i.e. apply to all.
-    $hook ||= 'All';
-
-    unless(exists $PERMITTED{$hook}) {
-        croak "Invalid hook type in callback: $hook.";
-    }
-
-    if(defined($func)) {
-        UNIVERSAL::isa(($func), 'CODE') or do {
-            croak "Argument supplied to callback() should be a coderef.";
-        };
-        $self->{callback}{$hook} = $func;
-    }
-
-    if(exists $self->{callback}{$hook}) {
-        return $self->{callback}{$hook};
+    if(($cmd)=~/\b($PERM_REQ)\b/) {
+        return $1;
     }
     else {
         return;
     }
 }
 
-sub unset_callback {
-    my($self) = shift;
-    my($hook) = shift;
-
-    unless(exists $PERMITTED{$hook}) {
-        croak "Invalid hook type in unset_callback: $hook.";
-    }
-
-    if(exists $self->{callback}{$hook}) {
-        return delete $self->{callback}{$hook};
-    }
-    else {
-        return;
-    }
 }
+
+1;
+
+package Cvs::Simple;
+use strict;
+use warnings;
+use Carp;
+use Class::Std::Utils;
+use Cvs::Simple::Config;
+use FileHandle;
+
+our $VERSION = 0.03;
+
+{
+    my(%cvs_bin_of);
+    my(%external_of);
+    my(%callback_of);
+    my(%repos_of);
+
+    sub new {
+        my($class) = shift;
+        my($self) = bless anon_scalar(), $class;
+        $self->_init(@_);
+        return $self;
+    }
+
+    sub _init {
+        my($self) = shift;
+        my(%args) = @_;
+
+        if(exists $args{cvs_bin}) {
+            $self->cvs_bin($args{cvs_bin});
+        }
+        else {
+           $self->cvs_bin(Cvs::Simple::Config::CVS_BIN);
+        }
+
+        if(exists $args{external}) {
+            $self->external($args{external});
+        }
+        elsif (Cvs::Simple::Config::EXTERNAL) {
+            $self->external(Cvs::Simple::Config::EXTERNAL);
+        }
+        else {
+            ();
+        }
+
+        if(exists $args{callback}) {
+            $self->callback($args{callback});
+        }
+    }
+
+    sub callback {
+        my($self) = shift;
+        my($hook) = shift;
+        my($func) = shift;
+
+        # If 'hook' is not supplied, callback is global, i.e. apply to all.
+        $hook ||= 'All';
+
+        unless(Cvs::Simple::Hook::permitted($hook)) {
+            croak "Invalid hook type in callback: $hook.";
+        }
+
+        if(defined($func)) {
+            UNIVERSAL::isa(($func), 'CODE') or do {
+                croak "Argument supplied to callback() should be a coderef.";
+            };
+            $callback_of{ident $self}{$hook} = $func;
+        }
+
+        if(exists $callback_of{ident $self}{$hook}) {
+            return $callback_of{ident $self}{$hook};
+        }
+        else {
+            return;
+        }
+    }
+
+    sub unset_callback {
+        my($self) = shift;
+        my($hook) = shift;
+
+        unless(Cvs::Simple::Hook::permitted($hook)) {
+            croak "Invalid hook type in unset_callback: $hook.";
+        }
+
+        return delete $callback_of{ident $self}{$hook};
+    }
 
 sub cvs_bin {
     my($self) = shift;
-    my($bin)  = shift;
 
-    if($bin) {
-        $self->{cvs_bin} = $bin;
+    if(@_==1) {
+        $cvs_bin_of{ident $self} = shift; 
     }
 
-    return $self->{cvs_bin};
+    return $cvs_bin_of{ident $self};
 }
 
 sub cvs_cmd {
@@ -114,10 +142,9 @@ sub cvs_cmd {
 
     croak "Syntax: cvs_cmd(cmd)" unless (defined($cmd) && $cmd);
 
-    my($hook);
-    if(($cmd)=~/\b($PERM_REQ)\b/) {
-        $hook = $1;
-    }
+    STDOUT->autoflush;
+
+    my($hook)= Cvs::Simple::Hook::get_hook $cmd;
 
     my($fh) = FileHandle->new("$cmd 2>&1 |");
     defined($fh) or croak "Failed to open $cmd:$!";
@@ -127,6 +154,9 @@ sub cvs_cmd {
             if($self->callback($hook)) {
                 $self->callback($hook)->($cmd,$_);
             } 
+            else {
+                print STDOUT $_;
+            }
         }
         else {
             if($self->callback('All')) {
@@ -179,12 +209,11 @@ SYN
 
 sub external {
     my($self)  = shift;
-    my($repos) = shift;
 
-    if($repos) {
-        $self->{repos} = $repos;
+    if(@_==1) {
+        $repos_of{ident $self} = shift;
     }
-    return $self->{repos};
+    return $repos_of{ident $self};
 }
 
 sub _cmd {
@@ -334,10 +363,20 @@ sub diff {
 }
 
 sub status {
+# status()
+# status(file1, ... )
     my($self) = shift;
     my(@args) = @_;
 
+    my($cmd) = $self->_cmd('status -v');
+
+    if(@args) {
+        $cmd .= join ' ' => @args;
+    }
+
+    return $self->cvs_cmd($cmd);
 }
+
 sub upd {
     goto &update;
 }
@@ -357,16 +396,25 @@ sub update {
     return $self->cvs_cmd($cmd);
 }
 
-sub up2date {
-# Checks workspace status. No args.
-    my($self) = shift;
+    sub up2date {
+    # Checks workspace status. No args.
+        my($self) = shift;
 
-    my($cmd) = $self->_cmd('-nq update -d');
+        my($cmd) = $self->_cmd('-nq update -d');
 
-    return $self->cvs_cmd($cmd);
+        return $self->cvs_cmd($cmd);
+    }
+
+    sub DESTROY {
+        my($self) = shift;
+        delete($cvs_bin_of {ident $self});
+        delete($external_of{ident $self});
+        delete($callback_of{ident $self});
+
+        return;
+    }
+
 }
-
-
 1;
 __END__
 =pod
@@ -489,11 +537,19 @@ CVS global option.
 Add a file or files to the repository; equivalent to C<cvs add file1, ....>,
 or C<cvs add -kb file1, ...> in the case of add_bin().
 
+=item co ( TAG, MODULE )
+
+  Alias for checkout()
+
 =item checkout ( MODULE )
 
 =item checkout ( TAG, MODULE )
 
   Note that co() can be used as an alias for checkout().
+
+=item ci
+
+  Alias for commit().
 
 =item commit ( )
 
@@ -522,6 +578,8 @@ diff -c -rTAG1 -rTAG2 FILE_OR_DIR>.
 This is the equivalent of C<cvs -q update -jOLD_REV -jNEW_REV FILENAME>.  Note
 for callback purposes that this is actually an update().
 
+=item backout ( CURRENT_REV, REVERT_REV, FILENAME )
+
 =item undo ( CURRENT_REV, REVERT_REV, FILENAME )
 
 Reverts from CURRENT_REV to REVERT_REV.  Equivalent to C<cvs update
@@ -531,9 +589,9 @@ Note that backout() can be used as an alias for undo().
 
 Note that for callback purposes this is actually an update().
 
-=item status 
+=item upd 
 
-Not implemented yet: method is a stub.
+  Alias for update().
 
 =item update ( )
 
@@ -548,6 +606,12 @@ Note that upd() is an alias for update().
 =item up2date ( )
 
 Short-hand for C<cvs -nq update -d>.
+
+=item status ( )
+
+=item status( file1 [, ..., ... ] )
+
+Equivalent to C<cvs status -v>.
 
 =back
 

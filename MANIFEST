@@ -4,6 +4,7 @@ MANIFEST
 META.yml
 README
 cvsup2date
+examples/cmd.pl
 lib/Cvs/Simple.pm
 lib/Cvs/Simple/Config.pm
 repository/Add/add_test_01.txt
@@ -14,8 +15,10 @@ t/04_diff.t
 t/05_backout.t
 t/06_merge.t
 t/07_commit.t
+t/08_status.t
 t/99_cleanup.t
 t/pod.t
-t/cleanup.sh
-t/cvs.sh
+t/pod-coverage.t
+t/cleanup.pl
+t/cvs.pl
 

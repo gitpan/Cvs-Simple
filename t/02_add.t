@@ -3,7 +3,8 @@ use strict;
 use warnings;
 use File::Copy;
 use File::Spec;
-use Test::More tests=>10;
+#use Test::More tests=>10;
+use Test::More qw(no_plan);
 use Cvs::Simple;
 
 my($add_ok,$commit_ok,$update_ok,$merge_ok) = (0,0,0,0);
@@ -40,24 +41,23 @@ isa_ok($cvs,'Cvs::Simple');
 $cvs->callback(update   => $add_callback   );
 $cvs->callback(commit   => $commit_callback);
 
-#if(-x $cvs->cvs_bin ) { # Do we have cvs?
-
 SKIP: {
 skip(q{Cvs not in $cvs->cvs_bin}, 7 ) unless (-x $cvs->cvs_bin );
 
 my($cwd) = File::Spec->curdir();
-unless ($cwd=~m{/t\z}) {
+unless((File::Spec->splitdir($cwd))[-1] eq 't') {
     chdir(File::Spec->catdir($cwd, 't'));
     $cwd = File::Spec->curdir();
 }
 
-my($clean)  = File::Spec->catfile($cwd, 'cleanup.sh');
-my($cvs_sh) = File::Spec->catfile($cwd, 'cvs.sh');
+my($clean)  = File::Spec->catfile($cwd, 'cleanup.pl');
+my($cvs_sh) = File::Spec->catfile($cwd, 'cvs.pl');
+my($devnull)= File::Spec->devnull;
 
 my($testdir) = File::Spec->tmpdir();
 my($cvs_bin) = Cvs::Simple::Config::CVS_BIN;
-qx[$clean               $testdir >>/dev/null 2>&1];
-qx[$cvs_sh     $cvs_bin $testdir >>/dev/null 2>&1];
+qx[$clean ];
+qx[$cvs_sh];
 
 my($repos) = File::Spec->catdir($testdir, 'cvsdir');
 $cvs->external($repos);
