@@ -1,8 +1,8 @@
 --- #YAML:1.0
 name:                Cvs-Simple
-version:             0.03
+version:             0.04
 abstract:            Perl interface to cvs
-license:             ~
+license:             perl
 generated_by:        ExtUtils::MakeMaker version 6.32
 distribution_type:   module
 requires:     
