@@ -4,7 +4,7 @@ package Cvs::Simple::Config;
 use strict;
 use warnings;
 
-sub CVS_BIN  () { '/usr/bin/cvs_real' }
+sub CVS_BIN  () { '/usr/bin/cvs' }
 sub EXTERNAL () { '' }
 
 1;

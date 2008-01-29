@@ -47,8 +47,8 @@ use Class::Std::Utils;
 use Cvs::Simple::Config;
 use FileHandle;
 
-use vars qw($VERSION);
-$VERSION = 0.04;
+use vars  qw($VERSION);
+use version; $VERSION = qv(0.0.5);
 
 {
     my(%cvs_bin_of);
@@ -655,7 +655,7 @@ Stephen Cardie, E<lt>stephenca@ls26.netE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2007 by Stephen Cardie
+Copyright (C) 2007,2008 by Stephen Cardie
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.8 or,
