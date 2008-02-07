@@ -1,6 +1,6 @@
-use 5;
 use ExtUtils::MakeMaker;
 use IO::File;
+require 5.006;
 # See lib/ExtUtils/MakeMaker.pm for details of how to influence
 # the contents of the Makefile that is written.
 
@@ -62,6 +62,7 @@ WriteMakefile(
     PREREQ_PM => {
             'version'             => 0,
             'Class::Std::Utils'   => 0,
+            'Cwd'                 => 0,
             'Scalar::Util'        => 0,
             'File::Copy'          => 0,
             'File::Path'          => 0,
