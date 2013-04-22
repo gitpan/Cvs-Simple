@@ -1,54 +1,22 @@
-#!/usr/bin/perl
-package Cvs::Simple::Hook;
-use strict;
-use warnings;
-
-{
-my(%PERMITTED) = (
-    'All'      => '',
-    'add'      => '',
-    'checkout' => '',
-    'commit'   => '',
-    'update'   => '',
-    'diff'     => '',
-    'status'   => '',
-);
-sub PERM_REQ () {
-    my($patt) = join '|' => keys %PERMITTED;
-    return qr/$patt/;
-}
-
-sub permitted ($) {
-    return exists $PERMITTED{$_[0]} ? 1 : 0;
-}
-
-sub get_hook ($) {
-    my($cmd)      = shift;
-
-    my($PERM_REQ) = PERM_REQ;
-
-    if(($cmd)=~/\b($PERM_REQ)\b/) {
-        return $1;
-    }
-    else {
-        return;
-    }
-}
-
-}
-
-1;
-
 package Cvs::Simple;
 use strict;
 use warnings;
+
 use Carp;
 use Class::Std::Utils;
-use Cvs::Simple::Config;
-use FileHandle;
+use Cvs::Simple::Hook;
 
-use vars  qw($VERSION);
-use version; $VERSION = version->new( 0.06 );
+use File::Which       qw(which);
+
+use IO::Lines;
+use IO::Pipe;
+
+use Module::Runtime   qw(require_module);
+
+use Try::Tiny;
+
+# Version set by dist.ini; do not change here.
+our $VERSION = '0.07_01'; # VERSION
 
 {
     my(%cvs_bin_of);
@@ -56,7 +24,8 @@ use version; $VERSION = version->new( 0.06 );
     my(%callback_of);
     my(%repos_of);
 
-    sub new {
+    sub new 
+    {
         my($class) = shift;
         my($self) = bless anon_scalar(), $class;
         $self->_init(@_);
@@ -71,14 +40,40 @@ use version; $VERSION = version->new( 0.06 );
             $self->cvs_bin($args{cvs_bin});
         }
         else {
-           $self->cvs_bin(Cvs::Simple::Config::CVS_BIN);
+            if(defined($ENV{CVS_SIMPLE_BIN})) {
+                $self->cvs_bin($ENV{CVS_SIMPLE_BIN});
+            } else {
+                my $m = 
+                    try { require_module('Cvs::Simple::Config') }
+                    catch { undef };
+                if(defined($m)) {
+                    my $cvs_bin = 
+                        try   { Cvs::Simple::Config::CVS_BIN() }
+                        catch { warn($_); undef; };
+                    if(defined($cvs_bin)) {
+                        $self->cvs_bin( $cvs_bin );
+                    } else {
+                        croak("csv binary location not specified and cannot find.");
+                    }
+
+                    my $ext = 
+                    try { Cvs::Simple::Config::EXTERNAL() }
+                    catch { undef; };
+                    if(defined($ext)) {
+                        $self->external( $ext );
+                    }
+                } elsif ( my $exe_path = which('cvs') ) {
+                    $self->cvs_bin( $exe_path );
+                } else {
+                    croak("csv binary location not specified and cannot find.");
+                }
+            }
         }
 
-        if(exists $args{external}) {
+        if(exists($args{external})) {
             $self->external($args{external});
-        }
-        elsif (Cvs::Simple::Config::EXTERNAL) {
-            $self->external(Cvs::Simple::Config::EXTERNAL);
+        } elsif (defined($ENV{CVS_SIMPLE_EXTERNAL})) {
+            $self->external($ENV{CVS_SIMPLE_EXTERNAL});
         }
         else {
             ();
@@ -95,7 +90,7 @@ use version; $VERSION = version->new( 0.06 );
         my($func) = shift;
 
         # If 'hook' is not supplied, callback is global, i.e. apply to all.
-        $hook ||= 'All';
+        defined($hook) || ($hook = 'All');
 
         unless(Cvs::Simple::Hook::permitted($hook)) {
             croak "Invalid hook type in callback: $hook.";
@@ -110,8 +105,7 @@ use version; $VERSION = version->new( 0.06 );
 
         if(exists $callback_of{ident $self}{$hook}) {
             return $callback_of{ident $self}{$hook};
-        }
-        else {
+        } else {
             return;
         }
     }
@@ -137,6 +131,20 @@ sub cvs_bin {
     return $cvs_bin_of{ident $self};
 }
 
+sub _pipe {
+    my($cmd) = shift;
+
+    my($fh) = IO::Pipe->new;
+    $fh->reader( "$cmd 2>&1" );
+    defined($fh) or croak "Failed to open $cmd:$!";
+    my($SH) = IO::Lines->new();
+    $SH->print( $fh->getlines );
+
+    $fh->close or carp "Close failed:$!";
+
+    return $SH;
+}
+
 sub cvs_cmd {
     my($self) = shift;
     my($cmd)  = shift;
@@ -147,26 +155,18 @@ sub cvs_cmd {
 
     my($hook)= Cvs::Simple::Hook::get_hook $cmd;
 
-    my($fh) = FileHandle->new("$cmd 2>&1 |");
-    defined($fh) or croak "Failed to open $cmd:$!";
+    my($fh) = _pipe( "$cmd 2>&1" );
 
-    while(<$fh>) {
-        if(defined($hook)) {
-            if($self->callback($hook)) {
-                $self->callback($hook)->($cmd,$_);
-            } 
-            else {
-                print STDOUT $_;
-            }
+    my($hookfunc) = $self->callback($hook) ||
+                    $self->callback();
+
+    if(defined( $hookfunc )) {
+        while(defined($_=$fh->getline)) {
+            $hookfunc->( $cmd, $_ );
         }
-        else {
-            if($self->callback('All')) {
-                $self->callback('All')->($cmd, $_);
-            }
-            else {
-                print STDOUT $_;
-            }
-        }
+    }
+    else {
+        print STDOUT $fh->getlines;
     }
 
     $fh->close;
@@ -416,13 +416,22 @@ sub update {
     }
 
 }
+
 1;
+
+# ABSTRACT: Perl interface to cvs.
+
 __END__
+
 =pod
 
 =head1 NAME
 
-Cvs::Simple - Perl interface to cvs
+Cvs::Simple - Perl interface to cvs.
+
+=head1 VERSION
+
+version 0.07_01
 
 =head1 SYNOPSIS
 
@@ -452,7 +461,6 @@ Cvs::Simple - Perl interface to cvs
   $cvs->commit();
   croak "Failed to commit file.txt" unless($commit);
   $cvs->unset_callback('commit');
-
 
 =head1 DESCRIPTION
 
@@ -501,7 +509,7 @@ line returned by CVS.
 
 See the tests for examples of callbacks.
 
-=item 
+=item
 
 =item unset_callback ( CMD )
 
@@ -651,14 +659,13 @@ cvs(1), L<Cvs>, L<VCS::Cvs>
 
 =head1 AUTHOR
 
-Stephen Cardie, E<lt>stephenca@ls26.netE<gt>
+Stephen Cardie <stephenca@ls26.net>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2007,2008 by Stephen Cardie
+This software is copyright (c) 2013 by Stephen Cardie.
 
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself, either Perl version 5.8.8 or,
-at your option, any later version of Perl 5 you may have available.
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
 
 =cut
