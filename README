@@ -2,7 +2,7 @@ NAME
     Cvs::Simple - Perl interface to cvs.
 
 VERSION
-    version 0.07_01
+    version 0.07_02
 
 SYNOPSIS
       use Cvs::Simple;

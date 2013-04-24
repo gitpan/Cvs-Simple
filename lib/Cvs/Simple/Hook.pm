@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 # Version set by dist.ini; do not change here.
-our $VERSION = '0.07_01'; # VERSION
+our $VERSION = '0.07_02'; # VERSION
 
 
 {
@@ -59,7 +59,7 @@ Cvs::Simple::Hook - limits allowed cvs commands.
 
 =head1 VERSION
 
-version 0.07_01
+version 0.07_02
 
 =head1 DESCRIPTION
 
